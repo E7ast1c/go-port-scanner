@@ -2,68 +2,48 @@ package main
 
 import (
 	"fmt"
-	"github.com/alexflint/go-arg"
 	"net"
-	"port-scanner/pkg/net_validator"
+	"port-scanner/internal/flags"
 	"sync"
 	"time"
 )
 
 const (
-	timeout    time.Duration = time.Millisecond * 50
-	targetAddr               = "151.101.1.69"
-	targetPort               = "80"
-
-	netType = "tcp"
+	timeout time.Duration = time.Millisecond * 50
 )
 
-type scanArgs struct {
-	Addr    string `arg:"positional,required" help:"server address"`
-	Ports   string `arg:"positional,required" help:"server port(s), example 80, 100-200 or 400,500,600"`
-	NetType string `arg:"positional" default:"tcp" help:"net protocol, by default using tcp"`
-}
-
 type scan struct {
-	URI     string
-	NetType string
+	Addr     string
+	Ports    []string
+	ConnType string
 
 	mx *sync.Mutex
 }
 
 func main() {
-	scn := &scanArgs{}
-	arg.MustParse(scn)
-	fmt.Println("Addr:", scn.Addr)
-	fmt.Println("Ports:", scn.Ports)
-	fmt.Println("net type:", scn.NetType)
-
-	net_validator.Address(scn.Addr)
-	net_validator.PortCollector(scn.Ports)
-	net_validator.NetType(scn.NetType)
-
+	addr, ports, connType := flags.ParseArgs()
 	s := scan{
-		URI:     scn.Addr + ":" + scn.Ports,
-		NetType: scn.NetType,
-		mx:      &sync.Mutex{},
+		Addr:     addr,
+		Ports:    ports,
+		ConnType: connType,
+		mx:       &sync.Mutex{},
 	}
 
-	if err := s.scanPort(); err != nil {
-		s.prettyErr(err)
-		return
+	for i := range s.Ports {
+		if err := scanPort(s.Addr, s.Ports[i]); err != nil {
+			fmt.Printf("connect to %s:%s (%s) failed: %s\n", s.Addr, s.Ports[i], s.ConnType, err)
+			return
+		}
 	}
 }
 
-func (s *scan) scanPort() error {
-	conn, err := net.DialTimeout(s.NetType, s.URI, timeout)
-	defer conn.Close()
+func scanPort(addr, port string) error {
+	conn, err := net.DialTimeout("tcp", addr+":"+port, timeout)
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 
-	fmt.Printf("[+] connection to %s %s port [tcp/http] succeeded!\n", targetAddr, targetPort)
+	fmt.Printf("[+] connection to %s:%s [tcp/http] succeeded!\n", addr, port)
 	return nil
-}
-
-func (s *scan) prettyErr(err error) {
-	fmt.Printf("connect to %s (%s) failed: %s\n", s.URI, s.NetType, err)
 }
